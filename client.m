@@ -83,7 +83,6 @@ while ~has_quit
             fprintf(mySerial,'%s\n',selection);
             counts = fscanf(mySerial,'%d');
             fprintf('PWM has been set to %d\n', counts)  
-            end
             
         otherwise
             fprintf('Invalid Selection %c\n', selection);

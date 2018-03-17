@@ -2,12 +2,17 @@
 // include other header files here
 #include <stdio.h>
 #include "encoder.h"
+#include "isense.h"
 
 
 #define BUF_SIZE 200
 #define VOLTS_PER_COUN  T (3.3/1024)
 #define CORE_TICK_TIME 25    // nanoseconds between core ticks
 #define DELAY_TICKS 20000000 // delay 1/2 sec, 20 M core ticks, between messages
+#define PLOTPTS 200
+#define DECIMATION 10
+
+
 
 // for the reference current waveform
 #define NUMSAMPS 100
@@ -17,6 +22,16 @@ int pwm = 0;
 enum set_mode{IDLE, PWM, ITEST, HOLD, TRACK};
 int mode;
 static volatile int Waveform[NUMSAMPS];
+static volatile int ADCarray[PLOTPTS];
+static volatile int REFarray[PLOTPTS];
+static volatile int StoringData = 0;
+static volatile float kp=0, ki=0;
+static volatile int err = 0;
+static volatile int errint = 0;
+// static volatile preverr = 0;
+
+
+
 // isr for 5khz
 
 void __ISR(_TIMER_2_VECTOR, IPL5SOFT) Controller(void)
@@ -32,7 +47,6 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) Controller(void)
     case 0:
     {
       OC1RS = 0; // pwm duty cycle is zero
-      
       break;
     }
 
@@ -47,57 +61,66 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) Controller(void)
       }
       break;
     }
+
+    case 2:
+    {
+
+      adcval = adc_sample_convert(7);    // sample and convert pin 14
+      err = Waveform[counter]-adcval;
+      errint += err;
+      u = kp*(err) + ki*(errint);
+
+      // preverr = err;
+
+      unew = (u/6)*100;
+
+
+      // unew = u + 50;
+      if(unew>100.0){unew=100.0;}
+      else if(unew<100){unew=-100;}
+
+      pwm =unew;
+      OC1RS = abs(pwm) * 20;
+      if(pwm<0){
+        LATEbits.LATE0 = 1; // setting motor direction, phase
+      }
+      else {
+        LATEbits.LATE0 = 0;
+      }
+
+      _CP0_SET_COUNT(0);                    // set the core timer count to zero
+      if(StoringData){
+        errint=0;
+        decctr++;
+        if(decctr==DECIMATION){
+          decctr=0;
+          ADCarray[plotind]=adcval;
+          REFarray[plotind]=Waveform[counter];
+          plotind++;
+        }
+        if(plotind==PLOTPTS){
+          plotind=0;
+          StoringData=0;
+        }
+      }
+
+      counter++;
+      if (counter==NUMSAMPS-1)
+      {
+        counter=0;
+        set_mode(IDLE);
+      }
+    }
+
+    default:
+    {
+     break;
+    }
   }
 
-
-  // adcval = adc_sample_convert(14);    // sample and convert pin 14
-  // NU32_WriteUART3(msg);
-  // err = Waveform[counter]-adcval;
-  // errint += err;
-
-
-  // u = kp*(err) + ki*(errint);
-  // // preverr = err;
-
-  // // unew = (u + 600)/1200*100;
-
-
-  // unew = u + 50;
-  // if(unew>100.0){unew=100.0;}
-  // else if(unew<0.0){unew=0.0;}
-
-  // OC1RS = (unsigned int)((unew/100)*PR3);
-
-  // _CP0_SET_COUNT(0);                    // set the core timer count to zero
-  
-
-
-  // if(StoringData){
-  //   errint=0;
-  //   decctr++;
-  //   if(decctr==DECIMATION){
-  //     decctr=0;
-  //     ADCarray[plotind]=adcval;
-  //     REFarray[plotind]=Waveform[counter];
-  //     plotind++;
-  //   }
-  //   if(plotind==PLOTPTS){
-  //     plotind=0;
-  //     StoringData=0;
-  //   }
-  // }
-
-
-
-
-  // counter++;
-  // if (counter==NUMSAMPS)
-  // {
-  //   counter=0;
-
-  // }
   IFS0bits.T2IF = 0;                // clear CT int flag
 }
+
 
 // waveform 100hz +- 200ma for question 28.4.10.2
 
@@ -111,7 +134,7 @@ void makeWaveform(){
     else if(i < 50){
       Waveform[i]=center-A;
     }
-    else if(i<75){
+    else if(i < 75){
       Waveform[i]=center+A;
     }
     else {
@@ -167,6 +190,7 @@ int main()
   NU32_LED1 = 1;  // turn off the LEDs
   NU32_LED2 = 1;
 
+  makeWaveform();
 
   __builtin_disable_interrupts();
 
