@@ -34,7 +34,7 @@ has_quit = false;
 while ~has_quit
     fprintf('PIC32 MOTOR DRIVER INTERFACE\n\n');
     % display the menu options; this list will grow
-    fprintf(' a: Read current sensor (ADC Counts)\t b: Read Current Sensor(mA)\n c: Read encoder (Counter)\t d: Motor Angle in degrees\n e: reset encoder\t f: Set PWM (-100 to 100)\n q: Quit\n');
+    fprintf(' a: Read current sensor (ADC Counts)\t b: Read Current Sensor(mA)\n c: Read encoder (Counter)\t\t d: Motor Angle in degrees\n e: reset encoder\t\t\t f: Set PWM (-100 to 100)\n g: Set gains\t\t\t\t h: get gains\n q: Quit\n');
     % read the user's choice
     selection = input('\nENTER COMMAND: ', 's');
      
@@ -53,8 +53,8 @@ while ~has_quit
             counts = fscanf(mySerial,'%d');
             fprintf('The motor angle is %d counts.\n', counts)        
         case 'd'                         % example operation
-            counts = fscanf(mySerial,'%d');
-            fprintf('The motor angle is %d degrees.\n', counts)
+            deg = fscanf(mySerial,'%d');
+            fprintf('The motor angle is %d degrees.\n', deg)
         case 'e'
             counts = fscanf(mySerial,'%d');
             fprintf('The motor angle is %d counts.It is reset\n', counts)
@@ -83,7 +83,7 @@ while ~has_quit
             fprintf(mySerial,'%s\n',selection);
             counts = fscanf(mySerial,'%d');
             fprintf('PWM has been set to %d\n', counts)  
-            
+                        
         otherwise
             fprintf('Invalid Selection %c\n', selection);
     end
