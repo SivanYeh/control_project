@@ -67,6 +67,10 @@ while ~has_quit
         case 'h'
             gain = fscanf(mySerial,'%s');
             fprintf('The gains Kp and Ki are %s repectively.\n',gain)
+        case 'k'
+            fprintf('The mode is ITEST');
+            data = read_plot_matrix(mySerial);
+            plot(data);
 
         case 'q'
             has_quit = true;             % exit client
@@ -77,13 +81,12 @@ while ~has_quit
              
         case 'p'
             counts = fscanf(mySerial,'%d');
-            fprintf('PWM has been set to %d\n', counts)        
+            fprintf('PWM has been set to %d\n', counts)     
         case 'f'
             selection = input('\nENTER COMMAND: ', 's');
             fprintf(mySerial,'%s\n',selection);
             counts = fscanf(mySerial,'%d');
-            fprintf('PWM has been set to %d\n', counts)  
-                        
+            fprintf('PWM has been set to %d\n', counts);
         otherwise
             fprintf('Invalid Selection %c\n', selection);
     end

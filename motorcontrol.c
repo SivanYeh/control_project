@@ -9,8 +9,8 @@
 #define VOLTS_PER_COUN  T (3.3/1024)
 #define CORE_TICK_TIME 25    // nanoseconds between core ticks
 #define DELAY_TICKS 20000000 // delay 1/2 sec, 20 M core ticks, between messages
-#define PLOTPTS 200
-#define DECIMATION 10
+#define PLOTPTS 100
+// #define DECIMATION 10
 
 
 
@@ -18,16 +18,19 @@
 #define NUMSAMPS 100
 
 
-int pwm = 0;
-enum set_mode{IDLE, PWM, ITEST, HOLD, TRACK};
+enum setmode{IDLE, PWM, ITEST, HOLD, TRACK};
 int mode;
+
+volatile int pwm = 0;
 static volatile int Waveform[NUMSAMPS];
-static volatile int ADCarray[PLOTPTS];
-static volatile int REFarray[PLOTPTS];
-static volatile int StoringData = 0;
+static volatile int ADCarray[NUMSAMPS];
+// static volatile int REFarray[PLOTPTS];
+// static volatile int StoringData = 0;
 static volatile float kp=0, ki=0;
 static volatile int err = 0;
 static volatile int errint = 0;
+static int counter=0;
+
 // static volatile preverr = 0;
 
 
@@ -36,9 +39,6 @@ static volatile int errint = 0;
 
 void __ISR(_TIMER_2_VECTOR, IPL5SOFT) Controller(void)
 {
-  static int counter=0;
-  static int plotind=0;
-  static int decctr=0;
   static int adcval=0;
   static float u = 0;
   static float unew = 0;
@@ -76,8 +76,8 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) Controller(void)
 
 
       // unew = u + 50;
-      if(unew>100.0){unew=100.0;}
-      else if(unew<100){unew=-100;}
+      if(unew > 100.0){unew = 100.0;}
+      else if(unew < -100){unew = -100;}
 
       pwm =unew;
       OC1RS = abs(pwm) * 20;
@@ -88,27 +88,15 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) Controller(void)
         LATEbits.LATE0 = 0;
       }
 
-      _CP0_SET_COUNT(0);                    // set the core timer count to zero
-      if(StoringData){
-        errint=0;
-        decctr++;
-        if(decctr==DECIMATION){
-          decctr=0;
-          ADCarray[plotind]=adcval;
-          REFarray[plotind]=Waveform[counter];
-          plotind++;
-        }
-        if(plotind==PLOTPTS){
-          plotind=0;
-          StoringData=0;
-        }
-      }
-
-      counter++;
-      if (counter==NUMSAMPS-1)
+      if (counter < NUMSAMPS)
       {
-        counter=0;
-        set_mode(IDLE);
+        ADCarray[counter] = adcval;
+        counter++;
+      }
+      else
+      {
+        counter = 0;
+        mode = 0;
       }
     }
 
@@ -196,7 +184,7 @@ int main()
 
   // in future, initialize modules or peripherals here
   // changing direction of motor at 5khz
-  set_mode(IDLE);
+  set_mode(0);
   setupISR_5khz();
   setupPWM_20khz();
 
@@ -204,6 +192,7 @@ int main()
 
   int deg;
   int temp;
+  int j = 0;
 
   float kp_current_temp = 0, ki_current_temp = 0; 
 
@@ -212,6 +201,9 @@ int main()
 
   while(1)
   {
+
+    
+
     NU32_ReadUART3(buffer,BUF_SIZE); // we expect the next character to be a menu command
     NU32_LED2 = 1;                   // clear the error LED
     switch (buffer[0]) {
@@ -261,7 +253,7 @@ int main()
       {
         NU32_ReadUART3(buffer,BUF_SIZE);
         sscanf(buffer,"%d", &pwm);
-        set_mode(PWM);
+        set_mode(1);
         sprintf(buffer,"%d\r\n",pwm);
         NU32_WriteUART3(buffer);
       }
@@ -272,6 +264,11 @@ int main()
         sscanf(buffer,"%f",&kp_current_temp);
         NU32_ReadUART3(buffer,BUF_SIZE);
         sscanf(buffer,"%f",&ki_current_temp);
+        __builtin_disable_interrupts();
+        errint=0;
+        kp=kp_current_temp;
+        ki=ki_current_temp;
+        __builtin_enable_interrupts();
         break;
       }
 
@@ -282,9 +279,28 @@ int main()
         break;
       }
 
+      case 'k':
+      {
+        set_mode(2);
+        sprintf(buffer,"%d\n",NUMSAMPS);
+        NU32_WriteUART3(buffer);
+        while (counter < 99){;};
+        __builtin_disable_interrupts();
+        for (j = 0; j < NUMSAMPS; j++)
+        {
+          sprintf(buffer, "%d %d\n",Waveform[j],ADCarray[j]);
+          NU32_WriteUART3(buffer);
+        }
+        __builtin_enable_interrupts();
+        break;
+      }
+
       case 'p':
       {
-        set_mode(IDLE);
+        __builtin_disable_interrupts();
+        set_mode(0);
+        __builtin_enable_interrupts();
+        sprintf(buffer,"%d\r\n",0);
         NU32_WriteUART3(buffer);
         break;
       }
@@ -292,7 +308,7 @@ int main()
       case 'q':
       {
         // handle q for quit. Later you may want to return to IDLE mode here.
-        set_mode(IDLE);
+        set_mode(0);
         break;
       }
 
@@ -301,40 +317,8 @@ int main()
         int temp = get_mode();
         sprintf(buffer,"%d\n", temp);
         NU32_WriteUART3(buffer);
-
-      //   switch (buffer[0]) {
-      //     case 'p':                      // idle mode
-      //     {
-      //       OC1RS = 0; // pwm duty cycle is zero
-      //       sprintf(buffer,"%d\r\n",OC1RS);
-      //       NU32_WriteUART3(buffer);
-      //       break;
-      //     }
-      //     case 'f':
-      //     {
-
-      //       NU32_ReadUART3(buffer,BUF_SIZE);
-      //       sscanf(buffer,"%d", &pwm);
-      //       OC1RS = abs(pwm) * 20;
-      //       if(pwm<0){
-      //         LATEbits.LATE0 = 1; // setting motor direction, phase
-      //       }
-      //       else {
-      //         LATEbits.LATE0 = 0;
-      //       }
-      //       sprintf(buffer,"%d\r\n",pwm);
-      //       NU32_WriteUART3(buffer);
-      //       break;
-      //     }
-      //     default:
-      //     {
-      //       NU32_LED2 = 0;  // turn on LED2 to indicate an error
-      //       break;
-      //     }
-      //   }
         break;
       }
-
 
       default:
       {
